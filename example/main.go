@@ -1,9 +1,3 @@
-# gmgo
-Convenient wrapper around Go's MongoDB driver Mgo
-
-## Usage:
-
-```go
 package main
 
 import (
@@ -20,7 +14,7 @@ type User struct {
 	Id    bson.ObjectId `json:"_id" bson:"_id"`
 	Name  string        `json:"name" bson:"name"`
 	Email string        `json:"email" bson:"email"`
-	Sex string        `json:"sex" bson:"sex"`
+	Sex   string        `json:"sex" bson:"sex"`
 }
 
 // Each of your data model that needs to be persisted should implment gmgo.Document interface
@@ -130,5 +124,3 @@ func main() {
 	println("findUsingIterator")
 	findUsingIterator()
 }
-
-```
