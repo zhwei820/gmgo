@@ -2,10 +2,19 @@ package main
 
 import (
 	"fmt"
+	"github.com/globalsign/mgo"
 	"github.com/globalsign/mgo/bson"
 	"github.com/narup/gmgo"
 	"log"
+	"time"
 )
+import "github.com/json-iterator/go"
+
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
+
+var Dbconfig = gmgo.DbConfig{
+	HostURL: "mongodb://localhost:27017/userdb",
+	DBName:  "userdb"}
 
 var TestDB gmgo.Db
 
@@ -15,6 +24,19 @@ type User struct {
 	Name  string        `json:"name" bson:"name"`
 	Email string        `json:"email" bson:"email"`
 	Sex   string        `json:"sex" bson:"sex"`
+	Birth time.Time     `json:"birth" bson:"birth"`
+	Addr  Addr          `json:"addr" bson:"addr"`
+	Car   []Car         `json:"car" bson:"car"`
+}
+
+type Addr struct {
+	Home string `json:"home" bson:"home"`
+	Work string `json:"work" bson:"work"`
+}
+
+type Car struct {
+	Brand string `json:"brand" bson:"brand"`
+	Type  string `json:"type" bson:"type"`
 }
 
 // Each of your data model that needs to be persisted should implment gmgo.Document interface
@@ -24,11 +46,39 @@ func (user User) CollectionName() string {
 
 //####################
 
+func EnsureIndex() {
+	session := TestDB.Session()
+	defer session.Close()
+
+	c := session.Session.DB(Dbconfig.DBName).C(User{}.CollectionName())
+	index := mgo.Index{
+		Key:         []string{"-birth"},
+		Unique:      false,
+		Background:  true,
+		Sparse:      false,
+		ExpireAfter: 0,
+	}
+
+	err := c.EnsureIndex(index)
+	if err != nil {
+		panic(err)
+	}
+	idx, _ := c.Indexes()
+	for id, item := range idx {
+		println(fmt.Sprintf("%v, %v", id, item))
+	}
+}
+
 func saveNewUser() {
 	session := TestDB.Session()
 	defer session.Close()
 
-	user := &User{Name: "Puran", Email: "puran@xyz.com"}
+	user := &User{
+		Name:  "Puran",
+		Email: "puran@xyz.com",
+		Birth: time.Now(),
+		Car:   []Car{{Brand: "dfdsf", Type: "test"}},
+	}
 	user.Id = bson.NewObjectId()
 	err := session.Save(user)
 	if err != nil {
@@ -51,45 +101,28 @@ func findUser(userId string) *User {
 }
 
 //Find all users
-func findAllUsers() {
+func findAllUsers() ([]*User, error) {
 	session := TestDB.Session()
 	defer session.Close()
 
 	users, err := session.FindAll(gmgo.Q{}, new(User)) //Note user pointer is passed to identify the collection type etc.
-	if err != nil {
-		fmt.Printf("Error fetching users %s", err)
-	} else {
-		for _, user := range users.([]*User) {
-			println(user.Id.Hex() + " -- " + user.Email)
-		}
-	}
+	return users.([]*User), err
 }
 
 func findUsingIterator() ([]*User, error) {
 	session := TestDB.Session()
 	defer session.Close()
 
-	users := make([]*User, 0)
-
 	itr := session.DocumentIterator(gmgo.Q{"name": "Puran"}, "user")
 	itr.Load(gmgo.IteratorConfig{Limit: 20, SortBy: []string{"-_id"}})
 
 	result, err := itr.All(new(User))
-	if err != nil {
-		println(err)
-	}
-	users1 := result.([]*User)
-	for _, user := range users1 {
-		println(user.Id.Hex() + " -- " + user.Email)
-	}
 
-	return users, nil
+	return result.([]*User), err
 }
 
 func setupDB() {
-	if err := gmgo.Setup(gmgo.DbConfig{
-		HostURL: "mongodb://localhost:27017/userdb",
-		DBName:  "userdb"}); err != nil {
+	if err := gmgo.Setup(Dbconfig); err != nil {
 		log.Fatalf("Database connection error : %s.\n", err)
 		return
 	}
@@ -99,25 +132,33 @@ func setupDB() {
 		log.Fatalf("Db connection error : %s.\n", err)
 	}
 	TestDB = newDb
+
 }
 
 func main() {
 	//setup Mongo database connection. You can setup multiple db connections
 	setupDB()
+	EnsureIndex()
 
 	println("saveNewUser")
-	for ii := 0; ii < 10000; ii++ {
-		saveNewUser()
-	}
+	//for ii := 0; ii < 10000; ii++ {
+	saveNewUser()
+	//}
 
 	println("findUser")
-	user := findUser("5c7250d7f7a26520feb67258")
+	user := findUser("5c725e16f7a2652e03d77cd8")
 	if user != nil {
-		println(fmt.Sprintf("User name:%v", user.Name))
+		println(fmt.Sprintf("User: %v", user.Birth))
 	} else {
 		println("Couldnt find user")
 	}
 
+	data, _ := json.Marshal(user)
+	println(string(data))
+	json.Unmarshal(data, &user)
+	println(fmt.Sprintf("User: %v", user.Birth))
+
+	//
 	println("findAllUsers")
 	findAllUsers()
 
